@@ -1656,26 +1656,73 @@ class DocumentParser {
         return result;
     }
     parseNumberingFile(node) {
-        var result = [];
-        var mapping = {};
-        var bullets = [];
+        const result = [];
+        const bullets = [];
+        const abstractLevels = {};
+        const numInstances = [];
+        const cloneNumbering = (num) => ({
+            ...num,
+            pStyle: { ...(num.pStyle ?? {}) },
+            rStyle: { ...(num.rStyle ?? {}) }
+        });
         for (const n of globalXmlParser.elements(node)) {
             switch (n.localName) {
-                case "abstractNum":
-                    this.parseAbstractNumbering(n, bullets)
-                        .forEach(x => result.push(x));
+                case "abstractNum": {
+                    const abstractId = globalXmlParser.attr(n, "abstractNumId");
+                    abstractLevels[abstractId] = this.parseAbstractNumbering(n, bullets);
                     break;
+                }
                 case "numPicBullet":
                     bullets.push(this.parseNumberingPicBullet(n));
                     break;
-                case "num":
-                    var numId = globalXmlParser.attr(n, "numId");
-                    var abstractNumId = globalXmlParser.elementAttr(n, "abstractNumId", "val");
-                    mapping[abstractNumId] = numId;
+                case "num": {
+                    const numId = globalXmlParser.attr(n, "numId");
+                    const abstractId = globalXmlParser.elementAttr(n, "abstractNumId", "val");
+                    const overrides = {};
+                    for (const e of globalXmlParser.elements(n)) {
+                        if (e.localName !== "lvlOverride")
+                            continue;
+                        const lvl = globalXmlParser.intAttr(e, "ilvl");
+                        const override = {};
+                        for (const o of globalXmlParser.elements(e)) {
+                            switch (o.localName) {
+                                case "startOverride":
+                                    override.start = globalXmlParser.intAttr(o, "val");
+                                    break;
+                                case "lvl":
+                                    override.level = this.parseNumberingLevel(numId, o, bullets);
+                                    break;
+                            }
+                        }
+                        overrides[lvl] = override;
+                    }
+                    if (numId && abstractId) {
+                        numInstances.push({ numId, abstractId, overrides });
+                    }
                     break;
+                }
             }
         }
-        result.forEach(x => x.id = mapping[x.id]);
+        for (const num of numInstances) {
+            const baseLevels = abstractLevels[num.abstractId] ?? [];
+            for (const baseLevel of baseLevels) {
+                const override = num.overrides[baseLevel.level];
+                let level = cloneNumbering(baseLevel);
+                if (override?.level) {
+                    const overrideLevel = cloneNumbering(override.level);
+                    level = {
+                        ...level,
+                        ...overrideLevel,
+                        pStyle: { ...level.pStyle, ...overrideLevel.pStyle },
+                        rStyle: { ...level.rStyle, ...overrideLevel.rStyle }
+                    };
+                }
+                if (override?.start != null)
+                    level.start = override.start;
+                level.id = num.numId;
+                result.push(level);
+            }
+        }
         return result;
     }
     parseNumberingPicBullet(elem) {
@@ -1714,6 +1761,9 @@ class DocumentParser {
             switch (n.localName) {
                 case "start":
                     result.start = globalXmlParser.intAttr(n, "val");
+                    break;
+                case "lvlRestart":
+                    result.restart = globalXmlParser.intAttr(n, "val");
                     break;
                 case "pPr":
                     this.parseDefaultProperties(n, result.pStyle);
@@ -3256,8 +3306,9 @@ section.${c}>footer { z-index: 1; }
             else if (num.levelText) {
                 let counter = this.numberingCounter(num.id, num.level);
                 const counterReset = counter + " " + (num.start - 1);
-                if (num.level > 0) {
-                    styleText += this.styleToString(`p.${this.numberingClass(num.id, num.level - 1)}`, {
+                const restartLevel = num.restart ?? (num.level - 1);
+                if (num.level > 0 && restartLevel >= 0 && restartLevel < num.level) {
+                    styleText += this.styleToString(`p.${this.numberingClass(num.id, restartLevel)}`, {
                         "counter-set": counterReset
                     });
                 }

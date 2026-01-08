@@ -367,30 +367,91 @@ export class DocumentParser {
 	}
 
 	parseNumberingFile(node: Element): IDomNumbering[] {
-		var result = [];
-		var mapping = {};
-		var bullets = [];
+		const result: IDomNumbering[] = [];
+		const bullets: NumberingPicBullet[] = [];
+		const abstractLevels: Record<string, IDomNumbering[]> = {};
+		const numInstances: Array<{
+			numId: string;
+			abstractId: string;
+			overrides: Record<number, { start?: number; level?: IDomNumbering }>;
+		}> = [];
+
+		const cloneNumbering = (num: IDomNumbering): IDomNumbering => ({
+			...num,
+			pStyle: { ...(num.pStyle ?? {}) },
+			rStyle: { ...(num.rStyle ?? {}) }
+		});
 
 		for (const n of xml.elements(node)) {
 			switch (n.localName) {
-				case "abstractNum":
-					this.parseAbstractNumbering(n, bullets)
-						.forEach(x => result.push(x));
+				case "abstractNum": {
+					const abstractId = xml.attr(n, "abstractNumId");
+					abstractLevels[abstractId] = this.parseAbstractNumbering(n, bullets);
 					break;
+				}
 
 				case "numPicBullet":
 					bullets.push(this.parseNumberingPicBullet(n));
 					break;
 
-				case "num":
-					var numId = xml.attr(n, "numId");
-					var abstractNumId = xml.elementAttr(n, "abstractNumId", "val");
-					mapping[abstractNumId] = numId;
+				case "num": {
+					const numId = xml.attr(n, "numId");
+					const abstractId = xml.elementAttr(n, "abstractNumId", "val");
+					const overrides: Record<number, { start?: number; level?: IDomNumbering }> = {};
+
+					for (const e of xml.elements(n)) {
+						if (e.localName !== "lvlOverride")
+							continue;
+
+						const lvl = xml.intAttr(e, "ilvl");
+						const override: { start?: number; level?: IDomNumbering } = {};
+
+						for (const o of xml.elements(e)) {
+							switch (o.localName) {
+								case "startOverride":
+									override.start = xml.intAttr(o, "val");
+									break;
+								case "lvl":
+									override.level = this.parseNumberingLevel(numId, o, bullets);
+									break;
+							}
+						}
+
+						overrides[lvl] = override;
+					}
+
+					if (numId && abstractId) {
+						numInstances.push({ numId, abstractId, overrides });
+					}
 					break;
+				}
 			}
 		}
 
-		result.forEach(x => x.id = mapping[x.id]);
+		for (const num of numInstances) {
+			const baseLevels = abstractLevels[num.abstractId] ?? [];
+
+			for (const baseLevel of baseLevels) {
+				const override = num.overrides[baseLevel.level];
+				let level = cloneNumbering(baseLevel);
+
+				if (override?.level) {
+					const overrideLevel = cloneNumbering(override.level);
+					level = {
+						...level,
+						...overrideLevel,
+						pStyle: { ...level.pStyle, ...overrideLevel.pStyle },
+						rStyle: { ...level.rStyle, ...overrideLevel.rStyle }
+					};
+				}
+
+				if (override?.start != null)
+					level.start = override.start;
+
+				level.id = num.numId;
+				result.push(level);
+			}
+		}
 
 		return result;
 	}
@@ -435,9 +496,14 @@ export class DocumentParser {
 
 		for (const n of xml.elements(node)) {
 			switch (n.localName) {
-				case "start":
-					result.start = xml.intAttr(n, "val");
-					break;
+			case "start":
+				result.start = xml.intAttr(n, "val");
+				break;
+
+			case "lvlRestart":
+				result.restart = xml.intAttr(n, "val");
+				break;
+
 
 				case "pPr":
 					this.parseDefaultProperties(n, result.pStyle);

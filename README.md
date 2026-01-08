@@ -35,6 +35,32 @@ Usage
     ...
 </body>
 ```
+
+DOCX to HTML (Node.js)
+-----
+This repo includes a Node.js converter script that runs docx-preview in a JSDOM environment.
+
+Install dependencies and build the bundle:
+```
+npm install
+npm run build-prod
+```
+
+Convert a DOCX to HTML:
+```
+node scripts/docx-to-html.mjs /path/to/input.docx /path/to/output.html
+```
+
+See all options:
+```
+node scripts/docx-to-html.mjs --help
+```
+
+Notes:
+- In Node.js, images and fonts are embedded as base64 URLs.
+- Comment popovers render with `--render-comments`, but text highlighting needs the browser Highlight API.
+- For best TOC/index fidelity, update fields in Word before conversion.
+
 API
 ---
 ```ts

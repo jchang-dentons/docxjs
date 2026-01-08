@@ -151,6 +151,7 @@ export interface IDomNumbering {
     id: string;
     level: number;
     start: number;
+    restart?: number;
     pStyleName: string;
     pStyle: Record<string, string>;
     rStyle: Record<string, string>;

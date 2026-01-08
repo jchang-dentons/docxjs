@@ -638,11 +638,14 @@ section.${c}>footer { z-index: 1; }
 			else if (num.levelText) {
 				let counter = this.numberingCounter(num.id, num.level);
 				const counterReset = counter + " " + (num.start - 1);
-				if (num.level > 0) {
-					styleText += this.styleToString(`p.${this.numberingClass(num.id, num.level - 1)}`, {
+				const restartLevel = num.restart ?? (num.level - 1);
+
+				if (num.level > 0 && restartLevel >= 0 && restartLevel < num.level) {
+					styleText += this.styleToString(`p.${this.numberingClass(num.id, restartLevel)}`, {
 						"counter-set": counterReset
 					});
 				}
+
 				// reset all level counters with start value
 				resetCounters.push(counterReset);
 
