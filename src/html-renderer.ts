@@ -617,6 +617,15 @@ section.${c}>footer { z-index: 1; }
 		var styleText = "";
 		var resetCounters = [];
 
+		// Build a map of numId -> level -> format for cross-level references in levelText
+		const levelFormats: Record<string, Record<number, string>> = {};
+		for (const num of numberings) {
+			if (!levelFormats[num.id]) {
+				levelFormats[num.id] = {};
+			}
+			levelFormats[num.id][num.level] = this.numFormatToCssValue(num.format);
+		}
+
 		for (var num of numberings) {
 			var selector = `p.${this.numberingClass(num.id, num.level)}`;
 			var listStyleType = "none";
@@ -650,7 +659,7 @@ section.${c}>footer { z-index: 1; }
 				resetCounters.push(counterReset);
 
 				styleText += this.styleToString(`${selector}:before`, {
-					"content": this.levelTextToContent(num.levelText, num.suff, num.id, this.numFormatToCssValue(num.format)),
+					"content": this.levelTextToContent(num.levelText, num.suff, num.id, levelFormats[num.id]),
 					"counter-increment": counter,
 					...num.rStyle,
 				});
@@ -1457,15 +1466,25 @@ section.${c}>footer { z-index: 1; }
 		return `${this.className}-num-${id}-${lvl}`;
 	}
 
-	levelTextToContent(text: string, suff: string, id: string, numformat: string) {
+	levelTextToContent(text: string, suff: string, id: string, levelFormats: Record<number, string>) {
 		const suffMap = {
 			"tab": "\\9",
 			"space": "\\a0",
 		};
 
-		var result = text.replace(/%\d*/g, s => {
+		// OOXML levelText uses %1 through %9 to reference levels 0-8
+		// Use %\d (single digit) instead of %\d* to avoid greedy matching
+		// e.g., "%10" should be parsed as "%1" followed by "0", not as level 10
+		// Each %N placeholder uses the format of its corresponding level
+		// When format is "none", output empty string instead of counter() for Safari compatibility
+		var result = text.replace(/%\d/g, s => {
 			let lvl = parseInt(s.substring(1), 10) - 1;
-			return `"counter(${this.numberingCounter(id, lvl)}, ${numformat})"`;
+			const format = levelFormats[lvl] ?? "decimal";
+			// Safari doesn't support counter(name, none), so skip it entirely
+			if (format === "none") {
+				return "";
+			}
+			return `"counter(${this.numberingCounter(id, lvl)}, ${format})"`;
 		});
 
 		return `"${result}${suffMap[suff] ?? ""}"`;
